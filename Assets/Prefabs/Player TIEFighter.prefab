@@ -125,8 +125,12 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4502821176140958720, guid: c84cb7bc2141f5842acf49acf5a3c0a5, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: -102.1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4502821176140958720, guid: c84cb7bc2141f5842acf49acf5a3c0a5, type: 3}
       propertyPath: m_LocalRotation.w
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4502821176140958720, guid: c84cb7bc2141f5842acf49acf5a3c0a5, type: 3}
       propertyPath: m_LocalRotation.x
@@ -134,7 +138,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4502821176140958720, guid: c84cb7bc2141f5842acf49acf5a3c0a5, type: 3}
       propertyPath: m_LocalRotation.y
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4502821176140958720, guid: c84cb7bc2141f5842acf49acf5a3c0a5, type: 3}
       propertyPath: m_LocalRotation.z
@@ -142,7 +146,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4502821176140958720, guid: c84cb7bc2141f5842acf49acf5a3c0a5, type: 3}
       propertyPath: m_LocalEulerAnglesHint.y
-      value: 180
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4502821176140958720, guid: c84cb7bc2141f5842acf49acf5a3c0a5, type: 3}
       propertyPath: m_LocalEulerAnglesHint.z
@@ -150,7 +154,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4940843912875078862, guid: c84cb7bc2141f5842acf49acf5a3c0a5, type: 3}
       propertyPath: m_LocalRotation.x
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4940843912875078862, guid: c84cb7bc2141f5842acf49acf5a3c0a5, type: 3}
       propertyPath: m_LocalRotation.y
@@ -158,11 +162,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4940843912875078862, guid: c84cb7bc2141f5842acf49acf5a3c0a5, type: 3}
       propertyPath: m_LocalRotation.z
-      value: -1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4940843912875078862, guid: c84cb7bc2141f5842acf49acf5a3c0a5, type: 3}
       propertyPath: m_LocalEulerAnglesHint.y
-      value: 180
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4940843912875078862, guid: c84cb7bc2141f5842acf49acf5a3c0a5, type: 3}
       propertyPath: m_LocalEulerAnglesHint.z
@@ -409,8 +413,12 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 8158483317555174388, guid: c84cb7bc2141f5842acf49acf5a3c0a5, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: -102.1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8158483317555174388, guid: c84cb7bc2141f5842acf49acf5a3c0a5, type: 3}
       propertyPath: m_LocalRotation.w
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 8158483317555174388, guid: c84cb7bc2141f5842acf49acf5a3c0a5, type: 3}
       propertyPath: m_LocalRotation.x
@@ -418,7 +426,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 8158483317555174388, guid: c84cb7bc2141f5842acf49acf5a3c0a5, type: 3}
       propertyPath: m_LocalRotation.y
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 8158483317555174388, guid: c84cb7bc2141f5842acf49acf5a3c0a5, type: 3}
       propertyPath: m_LocalRotation.z
@@ -426,7 +434,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 8158483317555174388, guid: c84cb7bc2141f5842acf49acf5a3c0a5, type: 3}
       propertyPath: m_LocalEulerAnglesHint.y
-      value: 180
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 8158483317555174388, guid: c84cb7bc2141f5842acf49acf5a3c0a5, type: 3}
       propertyPath: m_LocalEulerAnglesHint.z
@@ -509,7 +517,7 @@ MonoBehaviour:
   pitchSpeed: 240
   rollSpeed: 320
   rotationSmoothing: 3
-  wasdSensitivityFactor: 50
+  wasdSensitivityFactor: 5
   projectilePrefab: {fileID: 5988891631770349665, guid: 45686a9cc9821ef4f81a5d50de8e2fe7, type: 3}
   projectileSpawnPoints:
   - {fileID: 359367856773654420}

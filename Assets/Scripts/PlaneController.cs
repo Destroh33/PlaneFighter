@@ -20,7 +20,7 @@ public class PlaneController : NetworkBehaviour
     public float pitchSpeed = 240f;
     public float rollSpeed = 320f;
     public float rotationSmoothing = 3f;
-    public float wasdSensitivityFactor = 50f;
+    public float wasdSensitivityFactor = 5f;
 
     [Header("Combat Settings")]
     public GameObject projectilePrefab;
@@ -96,6 +96,10 @@ public class PlaneController : NetworkBehaviour
 
     void Update()
     {
+    }
+
+    void FixedUpdate()
+    {
         if (IsOwner && !IsServer && (controlScheme == ControlScheme.Mouse || controlScheme == ControlScheme.WASD))
         {
             SampleAndSendInput();
@@ -117,10 +121,6 @@ public class PlaneController : NetworkBehaviour
             if (controlScheme == ControlScheme.AI) RunAI();
             else RunPlayerServer();
         }
-    }
-
-    void FixedUpdate()
-    {
         if (!IsServer) return;
         rb.linearVelocity = transform.forward * currentSpeed;
     }
@@ -131,7 +131,7 @@ public class PlaneController : NetworkBehaviour
         bool boost = Input.GetKey(KeyCode.LeftShift);
         bool brake = Input.GetKey(KeyCode.LeftControl);
         bool fire = Input.GetKey(KeyCode.Space);
-        if (controlScheme == ControlScheme.WASD)
+        if (controlScheme == ControlScheme.Mouse)
         {
             float mouseX = Input.GetAxis("Mouse X");
             float mouseY = Input.GetAxis("Mouse Y");
@@ -149,7 +149,7 @@ public class PlaneController : NetworkBehaviour
             if (Input.GetKey(KeyCode.A)) roll = 1f * wasdSensitivityFactor;
             if (Input.GetKey(KeyCode.D)) roll = -1f * wasdSensitivityFactor;
         }
-
+        //Debug.Log($"Sending input - Pitch: {pitch}, Roll: {roll}, Boost: {boost}, Brake: {brake}, Fire: {fire}");
         SendInputServerRpc(pitch, roll, boost, brake, fire);
     }
 
@@ -177,13 +177,11 @@ public class PlaneController : NetworkBehaviour
             }
             else if (controlScheme == ControlScheme.WASD)
             {
-                //Debug.Log("Running wasd control scheme on server for owner");
                 if (Input.GetKey(KeyCode.W)) pitch = -1f * wasdSensitivityFactor;
                 if (Input.GetKey(KeyCode.S)) pitch = 1f * wasdSensitivityFactor;
                 if (Input.GetKey(KeyCode.A)) roll = 1f * wasdSensitivityFactor;
                 if (Input.GetKey(KeyCode.D)) roll = -1f * wasdSensitivityFactor;
             }
-            //Debug.Log($"Server running player input: pitch {pitch}, roll {roll}");
             ApplyRotation(pitch, roll);
             ApplyThrottle(Input.GetKey(KeyCode.LeftShift), Input.GetKey(KeyCode.LeftControl));
             TryFire(Input.GetKey(KeyCode.Space));

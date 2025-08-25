@@ -427,7 +427,7 @@ MonoBehaviour:
   pitchSpeed: 240
   rollSpeed: 320
   rotationSmoothing: 3
-  wasdSensitivityFactor: 50
+  wasdSensitivityFactor: 5
   projectilePrefab: {fileID: 5988891631770349665, guid: 45686a9cc9821ef4f81a5d50de8e2fe7, type: 3}
   projectileSpawnPoints:
   - {fileID: 2622529619139494739}
