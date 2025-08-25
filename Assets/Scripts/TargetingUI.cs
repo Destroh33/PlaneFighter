@@ -14,7 +14,11 @@ public class TargetingUI : MonoBehaviour
 
     void Update()
     {
-        if (mainCamera == null || plane == null) return;
+        if (mainCamera == null || plane == null)
+        {
+            arrowUI.gameObject.SetActive(false);
+            return;
+        }
 
         updateEnemyArrow();
         updateForwardReticle();
