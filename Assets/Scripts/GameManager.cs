@@ -1,52 +1,62 @@
-using FishNet;
-using FishNet.Connection;
-using FishNet.Managing;
-using FishNet.Object;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using FishNet.Object;
+using FishNet.Managing;
+using FishNet.Connection;
 
 public class GameModeManager : NetworkBehaviour
 {
     public static GameModeManager Instance;
 
-    [Header("Prefabs")]
-    public NetworkObject xwingPrefab;   // host gets this
-    public NetworkObject tiePrefab;     // clients get this
+    [Header("Managers (auto if null)")]
+    public NetworkManager networkManager;
+
+    [Header("Prefabs (NetworkObject roots)")]
+    public NetworkObject xwingPrefab;   // host/local client
+    public NetworkObject tiePrefab;     // remote clients
 
     [Header("Spawn Points")]
     public Transform hostSpawn;
     public Transform[] clientSpawns;
 
-    // killer -> kills
+    // scoring: clientId -> kills
     private readonly Dictionary<int, int> _kills = new();
+    // connection role: clientId -> isHost
+    private readonly Dictionary<int, bool> _isHostByConn = new();
+
     private int _clientSpawnIndex = 0;
 
-    void Awake() => Instance = this;
+    void Awake()
+    {
+        Instance = this;
+        if (!networkManager) networkManager = FindFirstObjectByType<NetworkManager>();
+    }
 
-    /* Every client (including the host's local client) will call this on connect. */
     public override void OnStartClient()
     {
         base.OnStartClient();
-        // Host will have the server running locally, remote clients will not.
-        bool iAmHost = InstanceFinder.IsServerStarted;
+        // Host local client will have server running locally; remote clients won't.
+        bool iAmHost = networkManager && networkManager.IsServerStarted;
         RequestSpawnServerRpc(iAmHost);
     }
 
-    /* Clients ask the server to spawn their ship. */
     [ServerRpc(RequireOwnership = false)]
     private void RequestSpawnServerRpc(bool isHost, NetworkConnection conn = null)
     {
+        if (conn == null || !conn.IsActive) return;
+        _isHostByConn[conn.ClientId] = isHost;
         SpawnFor(conn, isHost);
     }
 
+    [Server]
     private void SpawnFor(NetworkConnection conn, bool isHost)
     {
         var prefab = isHost ? xwingPrefab : tiePrefab;
         if (prefab == null)
         {
-            Debug.LogError("GameModeManager: Assign xwingPrefab/tiePrefab in the inspector.");
+            Debug.LogError("GameModeManager: assign xwingPrefab/tiePrefab.");
             return;
         }
 
@@ -62,8 +72,10 @@ public class GameModeManager : NetworkBehaviour
         else { pos = Vector3.zero; rot = Quaternion.identity; }
 
         NetworkObject no = Instantiate(prefab, pos, rot);
-        // Version-tolerant spawn with ownership for this connection.
-        InstanceFinder.ServerManager.Spawn(no, conn);
+
+        // Spawn then give ownership to that connection.
+        networkManager.ServerManager.Spawn(no);
+        no.GiveOwnership(conn);
     }
 
     /// Called by ShipHealthNet when a ship dies.
@@ -86,9 +98,7 @@ public class GameModeManager : NetworkBehaviour
         yield return new WaitForSeconds(delay);
         if (conn != null && conn.IsActive)
         {
-            // The host calls RequestSpawnServerRpc with isHost=true,
-            // remote clients with false. Reuse the same rule here:
-            bool isHost = conn == InstanceFinder.ClientManager.Connection && InstanceFinder.IsServerStarted;
+            bool isHost = _isHostByConn.TryGetValue(conn.ClientId, out bool val) && val;
             SpawnFor(conn, isHost);
         }
     }
@@ -96,14 +106,15 @@ public class GameModeManager : NetworkBehaviour
     [ObserversRpc(BufferLast = false)]
     private void RpcSetScoreboardText(string s)
     {
-        if (ScoreboardUI.Instance) ScoreboardUI.Instance.SetText(s);
+        var ui = ScoreboardUI.Instance;
+        if (ui != null) ui.SetText(s);
     }
 
+    [Server]
     private void PushScoresToClients()
     {
         if (_kills.Count == 0) { RpcSetScoreboardText("No kills yet."); return; }
-        var lines = _kills.OrderByDescending(kv => kv.Value)
-                          .Select(kv => $"Player {kv.Key}: {kv.Value}");
-        RpcSetScoreboardText(string.Join("\n", lines));
+        string text = string.Join("\n", _kills.OrderByDescending(kv => kv.Value).Select(kv => $"Player {kv.Key}: {kv.Value}"));
+        RpcSetScoreboardText(text);
     }
 }

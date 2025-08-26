@@ -9,7 +9,7 @@ public class FishNetDirectUI : MonoBehaviour
     public NetworkManager networkManager;
     public Tugboat tugboat;
     public Button hostBtn, serverBtn, joinBtn;
-    public TMP_InputField clientAddress; // e.g., 127.0.0.1, LAN IP, public IP
+    public TMP_InputField clientAddress; // 127.0.0.1, LAN IP, public IP
     public TMP_Text statusText;
 
     void Awake()
@@ -21,9 +21,9 @@ public class FishNetDirectUI : MonoBehaviour
 
     void Start()
     {
-        hostBtn.onClick.AddListener(StartHost);
-        serverBtn.onClick.AddListener(StartServer);
-        joinBtn.onClick.AddListener(StartClient);
+        if (hostBtn) hostBtn.onClick.AddListener(StartHost);
+        if (serverBtn) serverBtn.onClick.AddListener(StartServer);
+        if (joinBtn) joinBtn.onClick.AddListener(StartClient);
         Log("Idle");
     }
 
@@ -40,7 +40,7 @@ public class FishNetDirectUI : MonoBehaviour
     void StartServer()
     {
         if (networkManager.ServerManager.StartConnection())
-            Log("Server started. Clients connect to this machine's IP.");
+            Log("Server started.");
         else
             Log("Server start failed.");
     }

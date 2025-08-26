@@ -1130,6 +1130,7 @@ MonoBehaviour:
   _componentIndexCache: 1
   _addedNetworkObject: {fileID: 0}
   _networkObjectCache: {fileID: 0}
+  networkManager: {fileID: 0}
   maxHealth: 100
   exploder: {fileID: 845927831406917260}
 --- !u!135 &8170432994462300531

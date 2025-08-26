@@ -1,14 +1,22 @@
-// ShipHealthNet.cs
 using UnityEngine;
 using FishNet.Object;
 using FishNet.Connection;
+using FishNet.Managing;
+using System.Collections;
 
 public class ShipHealthNet : NetworkBehaviour
 {
+    [Header("Managers (auto if null)")]
+    public NetworkManager networkManager;
+
     public int maxHealth = 100;
     int currentHealth;
-
     public ShipExploderNet exploder;
+
+    void Awake()
+    {
+        if (!networkManager) networkManager = FindFirstObjectByType<NetworkManager>();
+    }
 
     void Start()
     {
@@ -29,13 +37,17 @@ public class ShipHealthNet : NetworkBehaviour
     {
         if (exploder) exploder.RpcExplode();
 
-        // Notify the game mode for scoring + respawn
-        var victim = Owner; // owner of this ship
+        var victim = Owner;
         if (GameModeManager.Instance != null)
             GameModeManager.Instance.ServerOnKilled(victim, killer);
 
-        // Despawn destroyed ship
+        StartCoroutine(DespawnAfter(0.05f));
+    }
+
+    IEnumerator DespawnAfter(float delay)
+    {
+        yield return new WaitForSeconds(delay);
         if (NetworkObject && NetworkObject.IsSpawned)
-            NetworkObject.Despawn();
+            networkManager.ServerManager.Despawn(NetworkObject);
     }
 }

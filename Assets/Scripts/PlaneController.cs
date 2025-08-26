@@ -1,17 +1,18 @@
-﻿using FishNet;
-using FishNet.Connection;
-using FishNet.Managing;
-using FishNet.Object;
-using System.Collections.Generic;
+﻿using UnityEngine;
 using Unity.Cinemachine;
-using UnityEngine;
+using System.Collections.Generic;
+using FishNet.Object;
+using FishNet.Managing;
+using FishNet.Connection;
 
 public class PlaneController : NetworkBehaviour
 {
     public enum ControlScheme { Mouse, WASD, AI }
 
-    [Header("Control Settings")]
-    public ControlScheme controlScheme = ControlScheme.Mouse;
+    [Header("Managers (auto if null)")]
+    public NetworkManager networkManager;
+
+    [Header("Control Settings")] public ControlScheme controlScheme = ControlScheme.Mouse;
 
     [Header("Flight Settings")]
     public float baseSpeed = 30f, maxSpeed = 60f, minSpeed = 10f, acceleration = 20f;
@@ -20,7 +21,7 @@ public class PlaneController : NetworkBehaviour
     public float pitchSpeed = 90f, rollSpeed = 90f, rotationSmoothing = 5f, wasdSensitivityFactor = 0.5f;
 
     [Header("Combat Settings")]
-    public NetworkObject projectilePrefab;                      // networked projectile
+    public NetworkObject projectilePrefab;             // NetworkObject prefab (registered in NetworkManager->Prefabs)
     public List<Transform> projectileSpawnPoints = new();
     public float projectileSpeed = 500f;
     public float fireRate = 0.1f;
@@ -30,21 +31,26 @@ public class PlaneController : NetworkBehaviour
     public float zVelBoost = 2f, zVelCruise = 1f, zVelBrake = 0.5f;
 
     [Header("Camera (Cinemachine v3)")]
-    public CinemachineCamera vcam;                              // assign in inspector or auto-find
+    public CinemachineCamera vcam;
     public float boostFov = 70f, normalFov = 60f, fovLerpSpeed = 5f, shakeAmp = 2f, shakeFreq = 3f;
 
     [Header("AI Settings")]
     public Transform player;
     public float detectionRange = 200f, fireRange = 150f, aimThreshold = 0.95f, aiFireCooldown = 0.5f;
 
-    [Header("UI")]
-    public TargetingUI targetingUI;                             // optional; will auto-find
+    [Header("UI (auto if null)")]
+    public TargetingUI targetingUI;
 
     float fireCooldown, currentSpeed, aiFireTimer;
     Rigidbody rb; Camera fallbackCam; CinemachineBasicMultiChannelPerlin noise; Collider myCol;
 
+    [Header("Client-side local projectile ghost")]
+    [SerializeField] bool spawnLocalReplicaForClient = true;
+    [SerializeField] float localReplicaLifetime = 2.0f;
+    [SerializeField] float localReplicaGravity = 0.0f; // 0 = straight, raise to arc
     void Awake()
     {
+        if (!networkManager) networkManager = FindFirstObjectByType<NetworkManager>();
         rb = GetComponent<Rigidbody>();
         myCol = GetComponent<Collider>();
         if (rb) rb.freezeRotation = true;
@@ -55,42 +61,33 @@ public class PlaneController : NetworkBehaviour
     {
         base.OnStartClient();
 
-        // Only owners drive input, camera, and HUD wiring.
         if (IsOwner && controlScheme != ControlScheme.AI)
         {
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;
 
-            // Ensure we have a vcam reference (CM v3)
-            if (!vcam)
-            {
-                vcam = FindFirstObjectByType<CinemachineCamera>();
-            }
+            if (!vcam) vcam = FindFirstObjectByType<CinemachineCamera>();
             if (vcam)
             {
                 noise = vcam.GetComponent<CinemachineBasicMultiChannelPerlin>();
-                SetVcamTargets(transform);     // <— Track & LookAt ME
+                var tgt = vcam.Target; tgt.TrackingTarget = transform; tgt.LookAtTarget = transform; vcam.Target = tgt;
             }
 
-            // Wire TargetingUI
-            if (!targetingUI)
-            {
-                targetingUI = FindFirstObjectByType<TargetingUI>();
-            }
+            if (!targetingUI) targetingUI = FindFirstObjectByType<TargetingUI>();
             WireTargetingUI();
         }
 
-        // AI helper
         if (!player && controlScheme == ControlScheme.AI)
         {
             var p = GameObject.FindGameObjectWithTag("Player");
             if (p) player = p.transform;
         }
+
+        //Debug.Log($"[Plane] OnStartClient -> IsOwner={IsOwner} IsServerInit={IsServerInitialized} NetId={NetworkObject?.NetworkObjectId}");
     }
 
     void FixedUpdate()
     {
-        // AI runs on server only
         if (controlScheme == ControlScheme.AI)
         {
             if (!IsServerInitialized) return;
@@ -99,43 +96,25 @@ public class PlaneController : NetworkBehaviour
             return;
         }
 
-        // Human input only by owning client
         if (!IsOwner) return;
 
         flightControls();
         throttle();
-        shootingLocal();                 // client asks server to fire
+        shootingLocal();
         updateEngineParticlesLocal();
         updateCameraEffectsLocal();
 
-        // Keep UI enemy target fresh if it got destroyed
         MaintainTargetingEnemy();
 
         rb.linearVelocity = transform.forward * currentSpeed;
     }
 
-    // -------------------- Camera & UI wiring --------------------
-
-    void SetVcamTargets(Transform t)
-    {
-        if (!vcam || !t) return;
-        var tgt = vcam.Target;               // CM v3 target struct
-        tgt.TrackingTarget = t;
-        tgt.LookAtTarget = t;
-        vcam.Target = tgt;
-    }
-
+    // ---- Camera & UI wiring ----
     void WireTargetingUI()
     {
         if (!targetingUI) return;
-
-        // The plane the UI belongs to (this local player)
         targetingUI.plane = transform;
-
-        // Enemy to track (pick nearest non-owned PlaneController)
         targetingUI.enemy = FindEnemyTransform();
-
-        // Camera reference for UI
         targetingUI.mainCamera = Camera.main;
     }
 
@@ -148,17 +127,11 @@ public class PlaneController : NetworkBehaviour
 
     Transform FindEnemyTransform()
     {
-#if UNITY_2023_1_OR_NEWER
         PlaneController[] all = FindObjectsByType<PlaneController>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
-#else
-        PlaneController[] all = FindObjectsOfType<PlaneController>();
-#endif
         Transform best = null; float bestDistSq = float.MaxValue;
         foreach (var pc in all)
         {
             if (!pc || pc == this) continue;
-
-            // Prefer non-owners (other players) or AI as enemies
             bool isEnemy = (!pc.IsOwner) || (pc.controlScheme == ControlScheme.AI);
             if (!isEnemy) continue;
 
@@ -168,8 +141,7 @@ public class PlaneController : NetworkBehaviour
         return best;
     }
 
-    // -------------------- Flight & Input --------------------
-
+    // ---- Flight & Input ----
     void flightControls()
     {
         float pitch = 0f, roll = 0f;
@@ -190,8 +162,7 @@ public class PlaneController : NetworkBehaviour
         }
 
         Quaternion delta = Quaternion.Euler(pitch, 0f, roll);
-        transform.rotation = Quaternion.Slerp(transform.rotation, transform.rotation * delta,
-                                              rotationSmoothing * Time.deltaTime);
+        transform.rotation = Quaternion.Slerp(transform.rotation, transform.rotation * delta, rotationSmoothing * Time.deltaTime);
     }
 
     void throttle()
@@ -204,52 +175,103 @@ public class PlaneController : NetworkBehaviour
             currentSpeed = Mathf.MoveTowards(currentSpeed, baseSpeed, acceleration * Time.deltaTime);
     }
 
-    // -------------------- Shooting (server authoritative) --------------------
-
+    // ---- Shooting (server authoritative) ----
     void shootingLocal()
     {
         fireCooldown -= Time.deltaTime;
         if (Input.GetKey(KeyCode.Space) && fireCooldown <= 0f)
         {
             fireCooldown = fireRate;
-            Debug.Log("[Shoot] Owner pressed Space → FireServerRpc()");
-            FireServerRpc();
+
+            foreach (var spawn in projectileSpawnPoints)
+            {
+                if (!spawn) continue;
+
+                if (IsServerInitialized)
+                {
+                    Debug.Log("[Shoot] Host → ServerFire()");
+                    ServerFire(spawn);
+                }
+                else
+                {
+                    Debug.Log("[Shoot] Client → FireServerRpc()");
+                    FireServerRpc(spawn.position, spawn.rotation * Vector3.forward);
+
+                    // 🔸 Spawn a local-only visual duplicate for this client
+                    if (spawnLocalReplicaForClient)
+                        SpawnLocalProjectileReplica(spawn);
+                }
+            }
         }
     }
 
     [ServerRpc]
-    void FireServerRpc()
+    void FireServerRpc(Vector3 pos, Vector3 forward)
     {
-        ServerFire();
+        // server uses client's pose for best match
+        ServerFire(pos, forward);
     }
 
     [Server]
-    void ServerFire()
+    void ServerFire(Transform spawn)
     {
-        if (!projectilePrefab || projectileSpawnPoints.Count == 0)
+        ServerFire(spawn.position, spawn.forward);
+    }
+
+    [Server]
+    void ServerFire(Vector3 pos, Vector3 forward)
+    {
+        if (!projectilePrefab)
         {
-            Debug.LogWarning("[Shoot] ServerFire aborted: assign projectilePrefab & spawn points");
+            Debug.LogWarning("[Shoot] ServerFire aborted: assign projectilePrefab");
             return;
         }
 
-        foreach (var spawn in projectileSpawnPoints)
+        var proj = Instantiate(projectilePrefab, pos, Quaternion.LookRotation(forward));
+
+        var projCol = proj.GetComponent<Collider>();
+        if (projCol && myCol) Physics.IgnoreCollision(projCol, myCol);
+
+        // Spawn for everyone
+        networkManager.ServerManager.Spawn(proj);
+        if (Owner != null) proj.GiveOwnership(Owner);
+
+        var rbProj = proj.GetComponent<Rigidbody>();
+        if (rbProj)
         {
-            if (!spawn) continue;
-
-            var proj = Instantiate(projectilePrefab, spawn.position, Quaternion.LookRotation(transform.forward));
-            var projCol = proj.GetComponent<Collider>();
-            if (projCol && myCol) Physics.IgnoreCollision(projCol, myCol);
-
-            InstanceFinder.ServerManager.Spawn(proj, Owner); // credit owner
-            //Debug.Log($"[Shoot] Server spawned proj NO={proj.NetworkObjectId} for owner {(Owner != null ? Owner.ClientId : (ushort)9999)}");
-
-            var rbProj = proj.GetComponent<Rigidbody>();
-            if (rbProj) rbProj.linearVelocity = transform.forward * projectileSpeed + rb.linearVelocity;
+            // use shooter's current velocity if you want: rb.linearVelocity (plane's rb)
+            var shooterVel = rb ? rb.linearVelocity : Vector3.zero;
+            rbProj.linearVelocity = forward * projectileSpeed + shooterVel;
+            rbProj.useGravity = false;
+            rbProj.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
         }
     }
 
-    // -------------------- AI --------------------
+    // --- NEW: local-only visual duplicate for clients ---
+    void SpawnLocalProjectileReplica(Transform spawn)
+    {
+        // Make an identical clone locally
+        var clone = Instantiate(projectilePrefab.gameObject, spawn.position, spawn.rotation);
 
+        // Disable network/logic/physics on the clone
+        var projNet = clone.GetComponent<ProjectileNet>(); if (projNet) projNet.enabled = false;
+        var nob = clone.GetComponent<FishNet.Object.NetworkObject>(); if (nob) nob.enabled = false;
+        var rbLocal = clone.GetComponent<Rigidbody>(); if (rbLocal) { rbLocal.isKinematic = true; rbLocal.useGravity = false; }
+        var col = clone.GetComponent<Collider>(); if (col) col.enabled = false;
+
+        // Ensure its trails render immediately
+        var trails = clone.GetComponentsInChildren<TrailRenderer>(true);
+        foreach (var t in trails) { if (!t) continue; t.Clear(); t.emitting = true; }
+
+        // Move it visually (no physics)
+        var mover = clone.AddComponent<LocalProjectileGhost>();
+        var shooterVel = rb ? rb.linearVelocity : Vector3.zero;
+        mover.velocity = spawn.forward * projectileSpeed + shooterVel;
+        mover.lifetime = localReplicaLifetime;
+        mover.gravity = localReplicaGravity;
+    }
+
+    // ---- AI ----
     void aiControls()
     {
         if (!player) return;
@@ -270,12 +292,11 @@ public class PlaneController : NetworkBehaviour
         if (distance <= fireRange && dot >= aimThreshold && aiFireTimer <= 0f)
         {
             aiFireTimer = aiFireCooldown;
-            ServerFire(); // server-side
+            //ServerFire();
         }
     }
 
-    // -------------------- Cosmetics (local only) --------------------
-
+    // ---- Cosmetics (local only) ----
     void updateEngineParticlesLocal()
     {
         float zVel = zVelCruise;
