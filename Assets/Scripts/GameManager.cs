@@ -14,21 +14,21 @@ public class GameModeManager : NetworkBehaviour
     public NetworkManager networkManager;
 
     [Header("Prefabs (NetworkObject roots)")]
-    public NetworkObject xwingPrefab;   // host/local client
-    public NetworkObject tiePrefab;     // remote clients
+    public NetworkObject xwingPrefab;   // first client
+    public NetworkObject tiePrefab;     // other clients
 
     [Header("Spawn Points")]
-    public Transform hostSpawn;
-    public Transform[] clientSpawns;
+    public Transform hostSpawn;         // X-Wing spawn
+    public Transform[] clientSpawns;    // TIE spawns
 
     [Header("Round Settings")]
     public float roundRestartDelay = 5f;
 
-    // kill tally: clientId -> kills
+    // clientId -> kills
     private readonly Dictionary<int, int> _kills = new();
-    // role mapping: clientId -> isHost
-    private readonly Dictionary<int, bool> _isHostByConn = new();
-    // currently spawned ship per client
+    // clientId -> isXWing
+    private readonly Dictionary<int, bool> _isXWingByConn = new();
+    // clientId -> spawned ship
     private readonly Dictionary<int, NetworkObject> _activeShips = new();
 
     private int _clientSpawnIndex = 0;
@@ -43,23 +43,26 @@ public class GameModeManager : NetworkBehaviour
     public override void OnStartClient()
     {
         base.OnStartClient();
-        // Host local client will have server running locally; remote clients won't.
-        bool iAmHost = networkManager && networkManager.IsServerStarted;
-        RequestSpawnServerRpc(iAmHost);
+        // Dedicated server has no local client; this runs only for real clients.
+        RequestSpawnServerRpc();
     }
 
     [ServerRpc(RequireOwnership = false)]
-    private void RequestSpawnServerRpc(bool isHost, NetworkConnection conn = null)
+    private void RequestSpawnServerRpc(NetworkConnection conn = null)
     {
         if (conn == null || !conn.IsActive) return;
-        _isHostByConn[conn.ClientId] = isHost;
-        SpawnFor(conn, isHost);
+
+        // Assign roles: first client gets X-Wing, others TIE
+        bool giveXWing = !_isXWingByConn.ContainsValue(true);
+        _isXWingByConn[conn.ClientId] = giveXWing;
+
+        SpawnFor(conn, giveXWing);
     }
 
     [Server]
-    private void SpawnFor(NetworkConnection conn, bool isHost)
+    private void SpawnFor(NetworkConnection conn, bool asXWing)
     {
-        var prefab = isHost ? xwingPrefab : tiePrefab;
+        var prefab = asXWing ? xwingPrefab : tiePrefab;
         if (prefab == null)
         {
             Debug.LogError("GameModeManager: assign xwingPrefab/tiePrefab.");
@@ -67,7 +70,7 @@ public class GameModeManager : NetworkBehaviour
         }
 
         Vector3 pos; Quaternion rot;
-        if (isHost && hostSpawn) { pos = hostSpawn.position; rot = hostSpawn.rotation; }
+        if (asXWing && hostSpawn) { pos = hostSpawn.position; rot = hostSpawn.rotation; }
         else if (clientSpawns != null && clientSpawns.Length > 0)
         {
             var t = clientSpawns[_clientSpawnIndex % clientSpawns.Length];
@@ -84,13 +87,13 @@ public class GameModeManager : NetworkBehaviour
         NetworkObject no = Instantiate(prefab, pos, rot);
         networkManager.ServerManager.Spawn(no);
         no.GiveOwnership(conn);
+
         _activeShips[conn.ClientId] = no;
 
-        // Tell ONLY the owner to bind their camera + HUD to this ship.
+        // Bind camera/UI for this owner on their machine.
         TargetBindLocal(conn, no);
     }
 
-    /// Called by ShipHealthNet when a ship dies.
     [Server]
     public void ServerOnKilled(NetworkConnection victim, NetworkConnection killer)
     {
@@ -122,28 +125,23 @@ public class GameModeManager : NetworkBehaviour
         _activeShips.Clear();
         _clientSpawnIndex = 0;
 
-        // Respawn everyone currently connected.
+        // Respawn everyone currently connected with their assigned role.
         foreach (var kv in networkManager.ServerManager.Clients)
         {
             var conn = kv.Value;
             if (conn == null || !conn.IsActive) continue;
 
-            bool isHost = _isHostByConn.TryGetValue(conn.ClientId, out bool val) && val;
-            SpawnFor(conn, isHost);
+            bool asXWing = _isXWingByConn.TryGetValue(conn.ClientId, out bool val) && val;
+            SpawnFor(conn, asXWing);
         }
 
         RpcRoundMessage("Fight!");
-        // Also refresh the 0:0 style scoreboard at round start.
         PushScoresToClients();
-
         _roundRestarting = false;
     }
 
     [ObserversRpc(BufferLast = false)]
-    private void RpcRoundMessage(string s)
-    {
-        Debug.Log($"[Round] {s}");
-    }
+    private void RpcRoundMessage(string s) => Debug.Log($"[Round] {s}");
 
     [ObserversRpc(BufferLast = false)]
     private void RpcSetScoreboardText(string s)
@@ -151,43 +149,29 @@ public class GameModeManager : NetworkBehaviour
         if (ScoreboardUI.Instance) ScoreboardUI.Instance.SetText(s);
     }
 
-    // --- SCOREBOARD: compact host:clients format ---
-
-    // Sum kills into two buckets: host vs everyone else.
-    (int host, int clients) GetTeamScores()
+    // Compact scoreboard: X-Wing team : TIE team
+    (int xwing, int tie) GetTeamScores()
     {
-        // Find the (single) host clientId if known
-        int hostId = -1;
-        foreach (var kv in _isHostByConn)
-        {
-            if (kv.Value) { hostId = kv.Key; break; }
-        }
-
-        int hostKills = 0;
-        int clientKills = 0;
-
+        int xwingKills = 0, tieKills = 0;
         foreach (var kv in _kills)
         {
-            if (kv.Key == hostId) hostKills += kv.Value;
-            else clientKills += kv.Value;
+            bool isX = _isXWingByConn.TryGetValue(kv.Key, out bool v) && v;
+            if (isX) xwingKills += kv.Value; else tieKills += kv.Value;
         }
-
-        return (hostKills, clientKills);
+        return (xwingKills, tieKills);
     }
 
     [Server]
     private void PushScoresToClients()
     {
-        var (host, clients) = GetTeamScores();
-        RpcSetScoreboardText($"{host}:{clients}");
+        var (x, t) = GetTeamScores();
+        RpcSetScoreboardText($"{x}:{t}");
     }
 
-    // Runs ONLY on the owner client. Binds camera + UI to their newly spawned ship.
     [TargetRpc]
     private void TargetBindLocal(NetworkConnection conn, NetworkObject playerNo)
     {
         var pc = playerNo ? playerNo.GetComponent<PlaneController>() : null;
-        if (pc != null)
-            pc.OwnerLocalSetup();
+        if (pc != null) pc.OwnerLocalSetup();
     }
 }
