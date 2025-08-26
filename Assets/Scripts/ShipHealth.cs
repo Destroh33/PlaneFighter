@@ -1,30 +1,27 @@
 using UnityEngine;
-using Unity.Netcode;
 
-public class ShipHealth : NetworkBehaviour
+public class ShipHealth : MonoBehaviour
 {
     public int maxHealth = 100;
-    public ShipExploder exploder;
+    private int currentHealth;
 
-    NetworkVariable<int> currentHealth = new NetworkVariable<int>();
+    public ShipExploder exploder;
 
     void Start()
     {
-        if (IsServer) currentHealth.Value = maxHealth;
+        currentHealth = maxHealth;
         if (exploder == null) exploder = GetComponent<ShipExploder>();
     }
 
     public void TakeDamage(int amount)
     {
-        if (!IsServer) return;
-        currentHealth.Value -= amount;
-        if (currentHealth.Value <= 0) Die();
+        currentHealth -= amount;
+        if (currentHealth <= 0) Die();
     }
 
     void Die()
     {
         if (exploder != null) exploder.Explode();
-        if (NetworkObject != null && NetworkObject.IsSpawned)
-            NetworkObject.Despawn();
+        Destroy(gameObject);
     }
 }

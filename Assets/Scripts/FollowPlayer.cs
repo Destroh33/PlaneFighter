@@ -6,6 +6,9 @@ public class FollowTransform : MonoBehaviour
 
     void LateUpdate()
     {
-        if (t != null) transform.position = t.position;
+        if (t != null)
+        {
+            transform.position = t.position;
+        }
     }
 }
