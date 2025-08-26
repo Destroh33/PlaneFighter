@@ -76,6 +76,10 @@ public class PlaneController : MonoBehaviour
 
     void Update()
     {
+    }
+
+    void FixedUpdate()
+    {
         if (controlScheme == ControlScheme.AI)
         {
             aiControls();
@@ -88,10 +92,6 @@ public class PlaneController : MonoBehaviour
             updateEngineParticles();
             updateCameraEffects();
         }
-    }
-
-    void FixedUpdate()
-    {
         rb.linearVelocity = transform.forward * currentSpeed;
     }
 
