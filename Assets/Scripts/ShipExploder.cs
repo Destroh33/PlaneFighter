@@ -1,8 +1,6 @@
 using UnityEngine;
-using Unity.Netcode;
-using System.Collections;
 
-public class ShipExploder : NetworkBehaviour
+public class ShipExploder : MonoBehaviour
 {
     public Transform meshContainer;
     public float explosionForce = 500f;
@@ -14,70 +12,54 @@ public class ShipExploder : NetworkBehaviour
     public float explosionScale = 2f;
     public float explosionLifetime = 2f;
 
-    bool explodedOnce;
-
     public void Explode()
-    {
-        if (!IsServer) return;
-        if (explodedOnce) return;
-        explodedOnce = true;
-
-        SpawnExplosionAndScatterClientRpc();
-
-        StartCoroutine(DespawnNextFrame());
-    }
-
-    [ClientRpc]
-    void SpawnExplosionAndScatterClientRpc()
     {
         if (explosionPrefab != null)
         {
-            var fx = Instantiate(explosionPrefab, transform.position, Quaternion.identity);
+            GameObject fx = Instantiate(explosionPrefab, transform.position, Quaternion.identity);
+
             fx.transform.localScale = Vector3.one * explosionScale;
 
-            var systems = fx.GetComponentsInChildren<ParticleSystem>(true);
-            foreach (var ps in systems)
+            ParticleSystem[] systems = fx.GetComponentsInChildren<ParticleSystem>();
+            foreach (ParticleSystem ps in systems)
             {
                 var main = ps.main;
                 main.startSizeMultiplier *= explosionScale;
                 main.startSpeedMultiplier *= explosionScale;
             }
+
             Destroy(fx, explosionLifetime);
         }
 
         if (meshContainer == null) return;
 
-        var count = meshContainer.childCount;
-        var parts = new Transform[count];
-        for (int i = 0; i < count; i++) parts[i] = meshContainer.GetChild(i);
+        Transform[] parts = new Transform[meshContainer.childCount];
+        for (int i = 0; i < meshContainer.childCount; i++)
+        {
+            parts[i] = meshContainer.GetChild(i);
+        }
 
-        foreach (var child in parts)
+        foreach (Transform child in parts)
         {
             if (child == null) continue;
 
-            var rb = child.GetComponent<Rigidbody>();
+            Rigidbody rb = child.gameObject.GetComponent<Rigidbody>();
             if (rb == null) rb = child.gameObject.AddComponent<Rigidbody>();
 
-            var col = child.GetComponent<Collider>();
+            Collider col = child.gameObject.GetComponent<Collider>();
             if (col == null) col = child.gameObject.AddComponent<BoxCollider>();
 
             rb.useGravity = false;
             rb.isKinematic = false;
 
-            child.SetParent(null, true);
+            child.parent = null;
 
             rb.AddExplosionForce(explosionForce, transform.position, explosionRadius, 0f, ForceMode.Impulse);
             rb.AddTorque(Random.insideUnitSphere * torqueStrength, ForceMode.Impulse);
 
             Destroy(child.gameObject, debrisLifetime);
         }
-    }
 
-    IEnumerator DespawnNextFrame()
-    {
-        yield return null; // let the ClientRpc run everywhere first
-        var no = GetComponent<NetworkObject>();
-        if (no != null && no.IsSpawned) no.Despawn(true);
-        else Destroy(gameObject);
+        Destroy(gameObject);
     }
 }
