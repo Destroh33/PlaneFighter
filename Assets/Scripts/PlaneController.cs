@@ -67,6 +67,7 @@ public class PlaneController : NetworkBehaviour
         //Cursor.lockState = CursorLockMode.Locked;
         //Cursor.visible = false;
         currentSpeed = baseSpeed;
+
         if (vcam == null) fallbackCam = Camera.main;
         if (vcam == null && fallbackCam != null) vcam = fallbackCam.GetComponent<CinemachineCamera>();
         if (vcam != null) noise = vcam.GetComponent<CinemachineBasicMultiChannelPerlin>();
@@ -281,11 +282,9 @@ public class PlaneController : NetworkBehaviour
     {
         bool boosting = Input.GetKey(KeyCode.LeftShift);
         float targetFov = boosting ? boostFov : normalFov;
-        //Debug.Log("Target FOV: " + targetFov);
-        ResolveVcam();
+
         if (vcam != null)
         {
-            //Debug.Log("Adjusting vcam FOV");
             var lens = vcam.Lens;
             lens.FieldOfView = Mathf.Lerp(lens.FieldOfView, targetFov, fovLerpSpeed * Time.deltaTime);
             vcam.Lens = lens;
@@ -301,7 +300,7 @@ public class PlaneController : NetworkBehaviour
             fallbackCam.fieldOfView = Mathf.Lerp(fallbackCam.fieldOfView, targetFov, fovLerpSpeed * Time.deltaTime);
         }
 
-            float zVel = zVelCruise;
+        float zVel = zVelCruise;
         if (Input.GetKey(KeyCode.LeftShift)) zVel = zVelBoost;
         else if (Input.GetKey(KeyCode.LeftControl)) zVel = zVelBrake;
 
@@ -311,18 +310,6 @@ public class PlaneController : NetworkBehaviour
             var vel = ps.velocityOverLifetime;
             vel.enabled = true;
             vel.z = zVel;
-        }
-    }
-    void ResolveVcam()
-    {
-        if (!IsOwner) return;
-        if (vcam != null) return;
-        if (vcam == null)
-            vcam = UnityEngine.Object.FindFirstObjectByType<CinemachineCamera>(FindObjectsInactive.Include);
-        if (vcam != null && noise == null)
-        {
-            noise = vcam.GetComponent<CinemachineBasicMultiChannelPerlin>();
-            if (noise == null) noise = vcam.gameObject.AddComponent<CinemachineBasicMultiChannelPerlin>();
         }
     }
 }
