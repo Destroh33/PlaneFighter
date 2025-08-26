@@ -2,7 +2,7 @@
 using UnityEngine;
 using FishNet.Object;
 using FishNet.Managing;
-using FishNet.Component.Transforming; // ensure NetworkTransform is on the prefab
+using FishNet.Component.Transforming;
 
 [RequireComponent(typeof(NetworkObject))]
 [RequireComponent(typeof(Rigidbody))]
@@ -15,21 +15,15 @@ public class ProjectileNet : NetworkBehaviour
     public float lifetime = 5f;
     public int damage = 15;
 
-    [Header("Trail (auto)")]
+    [Header("Visuals")]
     public TrailRenderer[] trails;
-    public bool fadeTrailOnImpact = true;
-    public float impactDespawnDelay = 0.12f;
-
-    [Header("Optional VFX")]
     public GameObject explosionPrefab;
     public float explosionScale = 1.5f;
     public float explosionLifetime = 2f;
 
     Rigidbody _rb;
     Collider _col;
-
-    // Prevents multiple OnCollisionEnter effects.
-    bool _hasImpacted;
+    bool _impacted;
 
     void Awake()
     {
@@ -40,29 +34,11 @@ public class ProjectileNet : NetworkBehaviour
             trails = GetComponentsInChildren<TrailRenderer>(true);
     }
 
-    public override void OnStartServer()
-    {
-        base.OnStartServer();
-
-        _hasImpacted = false;
-
-        // Server simulates physics & collisions
-        if (_rb)
-        {
-            _rb.isKinematic = false;
-            _rb.useGravity = false;
-            _rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
-        }
-        if (_col) _col.enabled = true;
-
-        Invoke(nameof(ServerTimeout), lifetime);
-    }
-
     public override void OnStartClient()
     {
         base.OnStartClient();
 
-        // Trails visible for everyone
+        // Ensure trail renders immediately
         foreach (var t in trails)
         {
             if (!t) continue;
@@ -70,53 +46,78 @@ public class ProjectileNet : NetworkBehaviour
             t.emitting = true;
         }
 
-        // Clients do not simulate physics/collide
-        if (!IsServerInitialized)
+        // Only server simulates physics
+        if (!IsServerInitialized && _rb != null)
         {
-            if (_rb) { _rb.isKinematic = true; _rb.useGravity = false; }
-            if (_col) _col.enabled = false;
+            _rb.isKinematic = true;
+            _rb.detectCollisions = false;
         }
     }
 
-    void ServerTimeout()
+    public override void OnStartServer()
     {
-        if (NetworkObject && NetworkObject.IsSpawned)
-            networkManager.ServerManager.Despawn(NetworkObject);
-    }
-
-    void OnCollisionEnter(Collision other)
-    {
-        if (!IsServerInitialized) return;
-        if (_hasImpacted) return;              // ✅ already processed a hit; ignore
-
-        _hasImpacted = true;                   // mark before doing anything else
-        if (_col) _col.enabled = false;        // stop further collision callbacks
-        if (_rb) _rb.isKinematic = true;      // freeze so it doesn't keep colliding
-
-        // Apply damage (only once)
-        var health = other.gameObject.GetComponent<ShipHealthNet>();
-        if (health != null)
-            health.ServerTakeDamage(damage, Owner);
-
-        Vector3 hitPos = (other.contactCount > 0) ? other.GetContact(0).point : transform.position;
-
-        // Stop trails (lets them fade) + optional VFX
-        RpcImpact(hitPos, fadeTrailOnImpact);
-
-        // Despawn shortly after so trail can fade on clients
-        StartCoroutine(DespawnAfter(impactDespawnDelay));
+        base.OnStartServer();
+        StartCoroutine(DespawnAfter(lifetime));
+        _impacted = false;
+        if (_rb != null)
+        {
+            _rb.useGravity = false;
+            _rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+        }
     }
 
     IEnumerator DespawnAfter(float delay)
     {
         yield return new WaitForSeconds(delay);
-        ServerTimeout();
+        if (!_impacted) RpcImpact(transform.position, true);
+
+        if (NetworkObject && NetworkObject.IsSpawned)
+            networkManager.ServerManager.Despawn(NetworkObject, DespawnType.Destroy);
+        else
+            Destroy(gameObject);
+    }
+
+    void OnCollisionEnter(Collision c)
+    {
+        if (!IsServerInitialized || _impacted) return;
+        _impacted = true;
+        if (_col) _col.enabled = false;
+        if (_rb) _rb.isKinematic = true;
+
+        var sh = c.collider.GetComponentInParent<ShipHealthNet>();
+        if (sh != null) sh.ServerTakeDamage(damage, Owner);
+
+        Vector3 hitPos = c.contacts.Length > 0 ? c.contacts[0].point : transform.position;
+        RpcImpact(hitPos, true);
+
+        if (NetworkObject && NetworkObject.IsSpawned)
+            networkManager.ServerManager.Despawn(NetworkObject, DespawnType.Destroy);
+        else
+            Destroy(gameObject);
+    }
+
+    void OnTriggerEnter(Collider other)
+    {
+        if (!IsServerInitialized || _impacted) return;
+        _impacted = true;
+        if (_col) _col.enabled = false;
+        if (_rb) _rb.isKinematic = true;
+
+        var sh = other.GetComponentInParent<ShipHealthNet>();
+        if (sh != null) sh.ServerTakeDamage(damage, Owner);
+
+        RpcImpact(transform.position, true);
+
+        if (NetworkObject && NetworkObject.IsSpawned)
+            networkManager.ServerManager.Despawn(NetworkObject, DespawnType.Destroy);
+        else
+            Destroy(gameObject);
     }
 
     [ObserversRpc(BufferLast = false)]
-    void RpcImpact(Vector3 pos, bool stopTrail)
+    void RpcImpact(Vector3 pos, bool stopTrails)
     {
-        if (stopTrail)
+        if (stopTrails)
             foreach (var t in trails) if (t) t.emitting = false;
 
         if (explosionPrefab)

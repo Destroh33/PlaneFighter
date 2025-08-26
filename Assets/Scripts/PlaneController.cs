@@ -12,7 +12,8 @@ public class PlaneController : NetworkBehaviour
     [Header("Managers (auto if null)")]
     public NetworkManager networkManager;
 
-    [Header("Control Settings")] public ControlScheme controlScheme = ControlScheme.Mouse;
+    [Header("Control Settings")]
+    public ControlScheme controlScheme = ControlScheme.Mouse;
 
     [Header("Flight Settings")]
     public float baseSpeed = 30f, maxSpeed = 60f, minSpeed = 10f, acceleration = 20f;
@@ -21,7 +22,7 @@ public class PlaneController : NetworkBehaviour
     public float pitchSpeed = 90f, rollSpeed = 90f, rotationSmoothing = 5f, wasdSensitivityFactor = 0.5f;
 
     [Header("Combat Settings")]
-    public NetworkObject projectilePrefab;             // NetworkObject prefab (registered in NetworkManager->Prefabs)
+    public NetworkObject projectilePrefab; // registered in NetworkManager->Prefabs
     public List<Transform> projectileSpawnPoints = new();
     public float projectileSpeed = 500f;
     public float fireRate = 0.1f;
@@ -42,12 +43,11 @@ public class PlaneController : NetworkBehaviour
     public TargetingUI targetingUI;
 
     float fireCooldown, currentSpeed, aiFireTimer;
-    Rigidbody rb; Camera fallbackCam; CinemachineBasicMultiChannelPerlin noise; Collider myCol;
+    Rigidbody rb;
+    Camera fallbackCam;
+    CinemachineBasicMultiChannelPerlin noise;
+    Collider myCol;
 
-    [Header("Client-side local projectile ghost")]
-    [SerializeField] bool spawnLocalReplicaForClient = true;
-    [SerializeField] float localReplicaLifetime = 2.0f;
-    [SerializeField] float localReplicaGravity = 0.0f; // 0 = straight, raise to arc
     void Awake()
     {
         if (!networkManager) networkManager = FindFirstObjectByType<NetworkManager>();
@@ -56,9 +56,9 @@ public class PlaneController : NetworkBehaviour
         if (rb) rb.freezeRotation = true;
         currentSpeed = baseSpeed;
     }
+
     public void OwnerLocalSetup()
     {
-        // Bind Cinemachine v3 camera to THIS plane
         var vcam = FindFirstObjectByType<CinemachineCamera>();
         if (vcam)
         {
@@ -68,7 +68,6 @@ public class PlaneController : NetworkBehaviour
             vcam.Target = tgt;
         }
 
-        // Wire TargetingUI to THIS plane
         var ui = FindFirstObjectByType<TargetingUI>();
         if (ui)
         {
@@ -87,7 +86,6 @@ public class PlaneController : NetworkBehaviour
         foreach (var pc in all)
         {
             if (!pc || pc == this) continue;
-            // Treat any non-owned plane as an enemy; works for host vs clients
             bool isEnemy = !pc.IsOwner || pc.controlScheme == ControlScheme.AI;
             if (!isEnemy) continue;
 
@@ -110,7 +108,10 @@ public class PlaneController : NetworkBehaviour
             if (vcam)
             {
                 noise = vcam.GetComponent<CinemachineBasicMultiChannelPerlin>();
-                var tgt = vcam.Target; tgt.TrackingTarget = transform; tgt.LookAtTarget = transform; vcam.Target = tgt;
+                var tgt = vcam.Target;
+                tgt.TrackingTarget = transform;
+                tgt.LookAtTarget = transform;
+                vcam.Target = tgt;
             }
 
             if (!targetingUI) targetingUI = FindFirstObjectByType<TargetingUI>();
@@ -122,8 +123,6 @@ public class PlaneController : NetworkBehaviour
             var p = GameObject.FindGameObjectWithTag("Player");
             if (p) player = p.transform;
         }
-
-        //Debug.Log($"[Plane] OnStartClient -> IsOwner={IsOwner} IsServerInit={IsServerInitialized} NetId={NetworkObject?.NetworkObjectId}");
     }
 
     void FixedUpdate()
@@ -143,13 +142,11 @@ public class PlaneController : NetworkBehaviour
         shootingLocal();
         updateEngineParticlesLocal();
         updateCameraEffectsLocal();
-
         MaintainTargetingEnemy();
 
         rb.linearVelocity = transform.forward * currentSpeed;
     }
 
-    // ---- Camera & UI wiring ----
     void WireTargetingUI()
     {
         if (!targetingUI) return;
@@ -229,17 +226,11 @@ public class PlaneController : NetworkBehaviour
 
                 if (IsServerInitialized)
                 {
-                    Debug.Log("[Shoot] Host → ServerFire()");
-                    ServerFire(spawn);
+                    ServerFire(spawn.position, spawn.forward);
                 }
                 else
                 {
-                    Debug.Log("[Shoot] Client → FireServerRpc()");
                     FireServerRpc(spawn.position, spawn.rotation * Vector3.forward);
-
-                    // 🔸 Spawn a local-only visual duplicate for this client
-                    if (spawnLocalReplicaForClient)
-                        SpawnLocalProjectileReplica(spawn);
                 }
             }
         }
@@ -248,14 +239,7 @@ public class PlaneController : NetworkBehaviour
     [ServerRpc]
     void FireServerRpc(Vector3 pos, Vector3 forward)
     {
-        // server uses client's pose for best match
         ServerFire(pos, forward);
-    }
-
-    [Server]
-    void ServerFire(Transform spawn)
-    {
-        ServerFire(spawn.position, spawn.forward);
     }
 
     [Server]
@@ -268,47 +252,22 @@ public class PlaneController : NetworkBehaviour
         }
 
         var proj = Instantiate(projectilePrefab, pos, Quaternion.LookRotation(forward));
-        //proj.GetComponent<ProjectileNet>()?.ServerSetShooter(this.NetworkObject);
+
         var projCol = proj.GetComponent<Collider>();
         if (projCol && myCol) Physics.IgnoreCollision(projCol, myCol);
 
-        // Spawn for everyone
+        if (!networkManager) networkManager = FindFirstObjectByType<NetworkManager>();
         networkManager.ServerManager.Spawn(proj);
         if (Owner != null) proj.GiveOwnership(Owner);
 
         var rbProj = proj.GetComponent<Rigidbody>();
         if (rbProj)
         {
-            // use shooter's current velocity if you want: rb.linearVelocity (plane's rb)
             var shooterVel = rb ? rb.linearVelocity : Vector3.zero;
             rbProj.linearVelocity = forward * projectileSpeed + shooterVel;
             rbProj.useGravity = false;
             rbProj.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
         }
-    }
-
-    // --- NEW: local-only visual duplicate for clients ---
-    void SpawnLocalProjectileReplica(Transform spawn)
-    {
-        // Make an identical clone locally
-        var clone = Instantiate(projectilePrefab.gameObject, spawn.position, spawn.rotation);
-
-        // Disable network/logic/physics on the clone
-        var projNet = clone.GetComponent<ProjectileNet>(); if (projNet) projNet.enabled = false;
-        var nob = clone.GetComponent<FishNet.Object.NetworkObject>(); if (nob) nob.enabled = false;
-        var rbLocal = clone.GetComponent<Rigidbody>(); if (rbLocal) { rbLocal.isKinematic = true; rbLocal.useGravity = false; }
-        var col = clone.GetComponent<Collider>(); if (col) col.enabled = false;
-
-        // Ensure its trails render immediately
-        var trails = clone.GetComponentsInChildren<TrailRenderer>(true);
-        foreach (var t in trails) { if (!t) continue; t.Clear(); t.emitting = true; }
-
-        // Move it visually (no physics)
-        var mover = clone.AddComponent<LocalProjectileGhost>();
-        var shooterVel = rb ? rb.linearVelocity : Vector3.zero;
-        mover.velocity = spawn.forward * projectileSpeed + shooterVel;
-        mover.lifetime = localReplicaLifetime;
-        mover.gravity = localReplicaGravity;
     }
 
     // ---- AI ----
@@ -346,7 +305,9 @@ public class PlaneController : NetworkBehaviour
         foreach (var ps in engineParticles)
         {
             if (!ps) continue;
-            var vel = ps.velocityOverLifetime; vel.enabled = true; vel.z = zVel;
+            var vel = ps.velocityOverLifetime;
+            vel.enabled = true;
+            vel.z = zVel;
         }
     }
 
