@@ -1104,6 +1104,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ecb41b9f88c9229409d1cd3d7e169657, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  _componentIndexCache: 0
+  _addedNetworkObject: {fileID: 0}
+  _networkObjectCache: {fileID: 0}
   meshContainer: {fileID: 1637556417898366777}
   explosionForce: 5
   explosionRadius: 10
@@ -1124,6 +1127,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2c33524b80e158243b261da527c8d4cc, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  _componentIndexCache: 1
+  _addedNetworkObject: {fileID: 0}
+  _networkObjectCache: {fileID: 0}
   maxHealth: 100
   exploder: {fileID: 845927831406917260}
 --- !u!135 &8170432994462300531

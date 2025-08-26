@@ -1,27 +1,41 @@
+// ShipHealthNet.cs
 using UnityEngine;
+using FishNet.Object;
+using FishNet.Connection;
 
-public class ShipHealth : MonoBehaviour
+public class ShipHealthNet : NetworkBehaviour
 {
     public int maxHealth = 100;
-    private int currentHealth;
+    int currentHealth;
 
-    public ShipExploder exploder;
+    public ShipExploderNet exploder;
 
     void Start()
     {
         currentHealth = maxHealth;
-        if (exploder == null) exploder = GetComponent<ShipExploder>();
+        if (!exploder) exploder = GetComponent<ShipExploderNet>();
     }
 
-    public void TakeDamage(int amount)
+    [Server]
+    public void ServerTakeDamage(int amount, NetworkConnection attacker)
     {
         currentHealth -= amount;
-        if (currentHealth <= 0) Die();
+        if (currentHealth <= 0)
+            ServerDie(attacker);
     }
 
-    void Die()
+    [Server]
+    void ServerDie(NetworkConnection killer)
     {
-        if (exploder != null) exploder.Explode();
-        Destroy(gameObject);
+        if (exploder) exploder.RpcExplode();
+
+        // Notify the game mode for scoring + respawn
+        var victim = Owner; // owner of this ship
+        if (GameModeManager.Instance != null)
+            GameModeManager.Instance.ServerOnKilled(victim, killer);
+
+        // Despawn destroyed ship
+        if (NetworkObject && NetworkObject.IsSpawned)
+            NetworkObject.Despawn();
     }
 }
