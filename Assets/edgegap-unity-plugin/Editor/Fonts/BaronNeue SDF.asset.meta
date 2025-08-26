@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: af70148bee18c584898036462be91b19
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 11400000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 212563
+  packageName: Edgegap Game Server & Hosting
+  packageVersion: 3.1.3
+  assetPath: Assets/edgegap-unity-plugin/Editor/Fonts/BaronNeue SDF.asset
+  uploadId: 776090

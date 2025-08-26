@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: 92c00ff489f816847b08e40fa333ae7c
+TextScriptImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 212563
+  packageName: Edgegap Game Server & Hosting
+  packageVersion: 3.1.3
+  assetPath: Assets/edgegap-unity-plugin/package.json
+  uploadId: 776090
