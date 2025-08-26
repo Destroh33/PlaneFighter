@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 using FishNet.Object;
 using FishNet.Connection;
 using FishNet.Managing;
@@ -11,7 +11,11 @@ public class ShipHealthNet : NetworkBehaviour
 
     public int maxHealth = 100;
     int currentHealth;
+
     public ShipExploderNet exploder;
+
+    // ✅ prevents double-counting a kill
+    bool _isDead;
 
     void Awake()
     {
@@ -21,12 +25,17 @@ public class ShipHealthNet : NetworkBehaviour
     void Start()
     {
         currentHealth = maxHealth;
+        _isDead = false;
         if (!exploder) exploder = GetComponent<ShipExploderNet>();
     }
 
     [Server]
     public void ServerTakeDamage(int amount, NetworkConnection attacker)
     {
+        if (_isDead) return;  // already dead; ignore stray hits
+        var victim  = Owner;
+        if (attacker == Owner)
+            return; // ignore self-hits
         currentHealth -= amount;
         if (currentHealth <= 0)
             ServerDie(attacker);
@@ -35,18 +44,16 @@ public class ShipHealthNet : NetworkBehaviour
     [Server]
     void ServerDie(NetworkConnection killer)
     {
-        Debug.Log($"ShipHealthNet: {Owner} killed by {killer}");
+        if (_isDead) return;  // guard reentry
+        _isDead = true;
+
         if (exploder) exploder.RpcExplode();
 
         var victim = Owner; // capture before despawn
         if (GameModeManager.Instance != null)
             GameModeManager.Instance.ServerOnKilled(victim, killer);
-        else
-        {
-            Debug.LogWarning("ShipHealthNet: no GameModeManager found in scene, cannot report kill.");
-        }
 
-            StartCoroutine(DespawnAfter(0.05f));
+        StartCoroutine(DespawnAfter(0.05f));
     }
 
     IEnumerator DespawnAfter(float delay)

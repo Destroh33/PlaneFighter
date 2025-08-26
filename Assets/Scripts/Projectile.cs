@@ -28,6 +28,9 @@ public class ProjectileNet : NetworkBehaviour
     Rigidbody _rb;
     Collider _col;
 
+    // Prevents multiple OnCollisionEnter effects.
+    bool _hasImpacted;
+
     void Awake()
     {
         if (!networkManager) networkManager = FindFirstObjectByType<NetworkManager>();
@@ -41,6 +44,8 @@ public class ProjectileNet : NetworkBehaviour
     {
         base.OnStartServer();
 
+        _hasImpacted = false;
+
         // Server simulates physics & collisions
         if (_rb)
         {
@@ -50,7 +55,6 @@ public class ProjectileNet : NetworkBehaviour
         }
         if (_col) _col.enabled = true;
 
-        // Lifetime cleanup
         Invoke(nameof(ServerTimeout), lifetime);
     }
 
@@ -83,17 +87,13 @@ public class ProjectileNet : NetworkBehaviour
     void OnCollisionEnter(Collision other)
     {
         if (!IsServerInitialized) return;
+        if (_hasImpacted) return;              // ✅ already processed a hit; ignore
 
-        // --- Ignore if we collided with something owned by the same client as this projectile ---
-        var otherNO = other.transform.GetComponentInParent<NetworkObject>();
-        if (ShouldIgnoreByOwner(otherNO))
-        {
-            // Proactively ignore all future contacts between this projectile and that object
-            IgnoreCollisionsWith(otherNO);
-            return; // keep flying; no damage/VFX/despawn
-        }
+        _hasImpacted = true;                   // mark before doing anything else
+        if (_col) _col.enabled = false;        // stop further collision callbacks
+        if (_rb) _rb.isKinematic = true;      // freeze so it doesn't keep colliding
 
-        // Apply damage to ships
+        // Apply damage (only once)
         var health = other.gameObject.GetComponent<ShipHealthNet>();
         if (health != null)
             health.ServerTakeDamage(damage, Owner);
@@ -124,38 +124,6 @@ public class ProjectileNet : NetworkBehaviour
             var fx = Instantiate(explosionPrefab, pos, Quaternion.identity);
             fx.transform.localScale = Vector3.one * explosionScale;
             Destroy(fx, explosionLifetime);
-        }
-    }
-
-    // ---------------- Owner-based ignore helpers ----------------
-
-    [Server]
-    bool ShouldIgnoreByOwner(NetworkObject otherNO)
-    {
-        if (otherNO == null || Owner == null || otherNO.Owner == null)
-            return false;
-
-        // Same client owns both the projectile and the hit object (eg. shooter, shooter's child, or their own projectile)
-        return otherNO.Owner.ClientId == Owner.ClientId;
-    }
-
-    [Server]
-    void IgnoreCollisionsWith(NetworkObject otherNO)
-    {
-        if (otherNO == null) return;
-
-        var myCols = GetComponentsInChildren<Collider>(true);
-        var theirCols = otherNO.GetComponentsInChildren<Collider>(true);
-        if (myCols == null || theirCols == null) return;
-
-        foreach (var pc in myCols)
-        {
-            if (!pc) continue;
-            foreach (var sc in theirCols)
-            {
-                if (!sc) continue;
-                Physics.IgnoreCollision(pc, sc, true);
-            }
         }
     }
 }
