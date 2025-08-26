@@ -35,13 +35,18 @@ public class ShipHealthNet : NetworkBehaviour
     [Server]
     void ServerDie(NetworkConnection killer)
     {
+        Debug.Log($"ShipHealthNet: {Owner} killed by {killer}");
         if (exploder) exploder.RpcExplode();
 
-        var victim = Owner;
+        var victim = Owner; // capture before despawn
         if (GameModeManager.Instance != null)
             GameModeManager.Instance.ServerOnKilled(victim, killer);
+        else
+        {
+            Debug.LogWarning("ShipHealthNet: no GameModeManager found in scene, cannot report kill.");
+        }
 
-        StartCoroutine(DespawnAfter(0.05f));
+            StartCoroutine(DespawnAfter(0.05f));
     }
 
     IEnumerator DespawnAfter(float delay)

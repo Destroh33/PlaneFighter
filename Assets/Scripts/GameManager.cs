@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -21,12 +21,18 @@ public class GameModeManager : NetworkBehaviour
     public Transform hostSpawn;
     public Transform[] clientSpawns;
 
-    // scoring: clientId -> kills
+    [Header("Round Settings")]
+    public float roundRestartDelay = 5f;
+
+    // kill tally: clientId -> kills
     private readonly Dictionary<int, int> _kills = new();
-    // connection role: clientId -> isHost
+    // role mapping: clientId -> isHost
     private readonly Dictionary<int, bool> _isHostByConn = new();
+    // currently spawned ship per client
+    private readonly Dictionary<int, NetworkObject> _activeShips = new();
 
     private int _clientSpawnIndex = 0;
+    private bool _roundRestarting = false;
 
     void Awake()
     {
@@ -71,11 +77,17 @@ public class GameModeManager : NetworkBehaviour
         }
         else { pos = Vector3.zero; rot = Quaternion.identity; }
 
-        NetworkObject no = Instantiate(prefab, pos, rot);
+        // Despawn any lingering ship for this player
+        if (_activeShips.TryGetValue(conn.ClientId, out var old) && old && old.IsSpawned)
+            networkManager.ServerManager.Despawn(old);
 
-        // Spawn then give ownership to that connection.
+        NetworkObject no = Instantiate(prefab, pos, rot);
         networkManager.ServerManager.Spawn(no);
         no.GiveOwnership(conn);
+        _activeShips[conn.ClientId] = no;
+
+        // Tell ONLY the owner to bind their camera + HUD to this ship.
+        TargetBindLocal(conn, no);
     }
 
     /// Called by ShipHealthNet when a ship dies.
@@ -84,37 +96,98 @@ public class GameModeManager : NetworkBehaviour
     {
         if (killer != null)
         {
-            int kid = killer.ClientId;
-            _kills.TryGetValue(kid, out int v);
-            _kills[kid] = v + 1;
+            _kills.TryGetValue(killer.ClientId, out int v);
+            _kills[killer.ClientId] = v + 1;
             PushScoresToClients();
         }
 
-        StartCoroutine(RespawnAfterDelay(victim, 5f));
+        if (!_roundRestarting)
+            StartCoroutine(RestartRoundAfter(roundRestartDelay));
     }
 
-    private IEnumerator RespawnAfterDelay(NetworkConnection conn, float delay)
+    [Server]
+    private IEnumerator RestartRoundAfter(float delay)
     {
+        _roundRestarting = true;
+        RpcRoundMessage($"Round over! Restarting in {delay:0}s…");
         yield return new WaitForSeconds(delay);
-        if (conn != null && conn.IsActive)
+
+        // Despawn all current ships.
+        foreach (var kv in _activeShips.ToArray())
         {
+            var ship = kv.Value;
+            if (ship && ship.IsSpawned)
+                networkManager.ServerManager.Despawn(ship);
+        }
+        _activeShips.Clear();
+        _clientSpawnIndex = 0;
+
+        // Respawn everyone currently connected.
+        foreach (var kv in networkManager.ServerManager.Clients)
+        {
+            var conn = kv.Value;
+            if (conn == null || !conn.IsActive) continue;
+
             bool isHost = _isHostByConn.TryGetValue(conn.ClientId, out bool val) && val;
             SpawnFor(conn, isHost);
         }
+
+        RpcRoundMessage("Fight!");
+        // Also refresh the 0:0 style scoreboard at round start.
+        PushScoresToClients();
+
+        _roundRestarting = false;
+    }
+
+    [ObserversRpc(BufferLast = false)]
+    private void RpcRoundMessage(string s)
+    {
+        Debug.Log($"[Round] {s}");
     }
 
     [ObserversRpc(BufferLast = false)]
     private void RpcSetScoreboardText(string s)
     {
-        var ui = ScoreboardUI.Instance;
-        if (ui != null) ui.SetText(s);
+        if (ScoreboardUI.Instance) ScoreboardUI.Instance.SetText(s);
+    }
+
+    // --- SCOREBOARD: compact host:clients format ---
+
+    // Sum kills into two buckets: host vs everyone else.
+    (int host, int clients) GetTeamScores()
+    {
+        // Find the (single) host clientId if known
+        int hostId = -1;
+        foreach (var kv in _isHostByConn)
+        {
+            if (kv.Value) { hostId = kv.Key; break; }
+        }
+
+        int hostKills = 0;
+        int clientKills = 0;
+
+        foreach (var kv in _kills)
+        {
+            if (kv.Key == hostId) hostKills += kv.Value;
+            else clientKills += kv.Value;
+        }
+
+        return (hostKills, clientKills);
     }
 
     [Server]
     private void PushScoresToClients()
     {
-        if (_kills.Count == 0) { RpcSetScoreboardText("No kills yet."); return; }
-        string text = string.Join("\n", _kills.OrderByDescending(kv => kv.Value).Select(kv => $"Player {kv.Key}: {kv.Value}"));
-        RpcSetScoreboardText(text);
+        var (host, clients) = GetTeamScores();
+        RpcSetScoreboardText($"{host}:{clients}");
+    }
+
+    // Runs ONLY on the owner client. Binds camera + UI to their newly spawned ship.
+    [TargetRpc]
+    private void TargetBindLocal(NetworkConnection conn, NetworkObject playerNo)
+    {
+        var pc = playerNo ? playerNo.GetComponent<PlaneController>() : null;
+        if (pc != null)
+            pc.OwnerLocalSetup();
     }
 }

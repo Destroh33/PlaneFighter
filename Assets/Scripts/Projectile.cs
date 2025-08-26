@@ -1,8 +1,8 @@
-using System.Collections;
+﻿using System.Collections;
 using UnityEngine;
 using FishNet.Object;
 using FishNet.Managing;
-using FishNet.Component.Transforming; // make sure a NetworkTransform is on the prefab
+using FishNet.Component.Transforming; // ensure NetworkTransform is on the prefab
 
 [RequireComponent(typeof(NetworkObject))]
 [RequireComponent(typeof(Rigidbody))]
@@ -84,6 +84,16 @@ public class ProjectileNet : NetworkBehaviour
     {
         if (!IsServerInitialized) return;
 
+        // --- Ignore if we collided with something owned by the same client as this projectile ---
+        var otherNO = other.transform.GetComponentInParent<NetworkObject>();
+        if (ShouldIgnoreByOwner(otherNO))
+        {
+            // Proactively ignore all future contacts between this projectile and that object
+            IgnoreCollisionsWith(otherNO);
+            return; // keep flying; no damage/VFX/despawn
+        }
+
+        // Apply damage to ships
         var health = other.gameObject.GetComponent<ShipHealthNet>();
         if (health != null)
             health.ServerTakeDamage(damage, Owner);
@@ -114,6 +124,38 @@ public class ProjectileNet : NetworkBehaviour
             var fx = Instantiate(explosionPrefab, pos, Quaternion.identity);
             fx.transform.localScale = Vector3.one * explosionScale;
             Destroy(fx, explosionLifetime);
+        }
+    }
+
+    // ---------------- Owner-based ignore helpers ----------------
+
+    [Server]
+    bool ShouldIgnoreByOwner(NetworkObject otherNO)
+    {
+        if (otherNO == null || Owner == null || otherNO.Owner == null)
+            return false;
+
+        // Same client owns both the projectile and the hit object (eg. shooter, shooter's child, or their own projectile)
+        return otherNO.Owner.ClientId == Owner.ClientId;
+    }
+
+    [Server]
+    void IgnoreCollisionsWith(NetworkObject otherNO)
+    {
+        if (otherNO == null) return;
+
+        var myCols = GetComponentsInChildren<Collider>(true);
+        var theirCols = otherNO.GetComponentsInChildren<Collider>(true);
+        if (myCols == null || theirCols == null) return;
+
+        foreach (var pc in myCols)
+        {
+            if (!pc) continue;
+            foreach (var sc in theirCols)
+            {
+                if (!sc) continue;
+                Physics.IgnoreCollision(pc, sc, true);
+            }
         }
     }
 }

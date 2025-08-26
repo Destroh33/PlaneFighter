@@ -56,6 +56,46 @@ public class PlaneController : NetworkBehaviour
         if (rb) rb.freezeRotation = true;
         currentSpeed = baseSpeed;
     }
+    public void OwnerLocalSetup()
+    {
+        // Bind Cinemachine v3 camera to THIS plane
+        var vcam = FindFirstObjectByType<CinemachineCamera>();
+        if (vcam)
+        {
+            var tgt = vcam.Target;
+            tgt.TrackingTarget = transform;
+            tgt.LookAtTarget = transform;
+            vcam.Target = tgt;
+        }
+
+        // Wire TargetingUI to THIS plane
+        var ui = FindFirstObjectByType<TargetingUI>();
+        if (ui)
+        {
+            ui.plane = transform;
+            ui.enemy = FindNearestEnemy();
+            ui.mainCamera = Camera.main;
+        }
+    }
+
+    Transform FindNearestEnemy()
+    {
+        var all = FindObjectsByType<PlaneController>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        Transform best = null;
+        float bestD2 = float.MaxValue;
+
+        foreach (var pc in all)
+        {
+            if (!pc || pc == this) continue;
+            // Treat any non-owned plane as an enemy; works for host vs clients
+            bool isEnemy = !pc.IsOwner || pc.controlScheme == ControlScheme.AI;
+            if (!isEnemy) continue;
+
+            float d2 = (pc.transform.position - transform.position).sqrMagnitude;
+            if (d2 < bestD2) { bestD2 = d2; best = pc.transform; }
+        }
+        return best;
+    }
 
     public override void OnStartClient()
     {
@@ -228,7 +268,7 @@ public class PlaneController : NetworkBehaviour
         }
 
         var proj = Instantiate(projectilePrefab, pos, Quaternion.LookRotation(forward));
-
+        //proj.GetComponent<ProjectileNet>()?.ServerSetShooter(this.NetworkObject);
         var projCol = proj.GetComponent<Collider>();
         if (projCol && myCol) Physics.IgnoreCollision(projCol, myCol);
 
