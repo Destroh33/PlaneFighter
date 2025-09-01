@@ -420,12 +420,13 @@ MonoBehaviour:
   _componentIndexCache: 2
   _addedNetworkObject: {fileID: 1675767326881007987}
   _networkObjectCache: {fileID: 1675767326881007987}
+  networkManager: {fileID: 0}
   controlScheme: 1
   baseSpeed: 30
   maxSpeed: 60
   minSpeed: 10
   acceleration: 50
-  pitchSpeed: 30
+  pitchSpeed: 45
   rollSpeed: 60
   rotationSmoothing: 5
   wasdSensitivityFactor: 0.35
@@ -435,7 +436,7 @@ MonoBehaviour:
   - {fileID: 8562391324053416170}
   - {fileID: 8510206508509084569}
   - {fileID: 9105572060628121049}
-  projectileSpeed: 500
+  projectileSpeed: 800
   fireRate: 0.2
   engineParticles:
   - {fileID: 5100587072448683261}

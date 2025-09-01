@@ -223,6 +223,7 @@ MonoBehaviour:
   _componentIndexCache: 2
   _addedNetworkObject: {fileID: 8535280480614068964}
   _networkObjectCache: {fileID: 8535280480614068964}
+  networkManager: {fileID: 0}
   controlScheme: 1
   baseSpeed: 30
   maxSpeed: 60
@@ -236,7 +237,7 @@ MonoBehaviour:
   projectileSpawnPoints:
   - {fileID: 359367856773654420}
   - {fileID: 5456469886568067168}
-  projectileSpeed: 500
+  projectileSpeed: 800
   fireRate: 0.2
   engineParticles:
   - {fileID: 4178815337111989300}
