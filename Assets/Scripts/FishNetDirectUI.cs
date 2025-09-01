@@ -4,7 +4,6 @@ using TMPro;
 using FishNet.Managing;
 using FishNet.Transporting.Tugboat;
 using FishNet.Transporting;
-using FishNet.Connection;
 using System;
 
 public class FishNetDirectUI : MonoBehaviour
@@ -18,6 +17,10 @@ public class FishNetDirectUI : MonoBehaviour
     public Button joinBtn;
     public TMP_InputField clientAddress;
     public TMP_Text statusText;
+    public Image backgroundImage;
+
+    bool _lockStatusToJoinCode = false;
+    string _lockedStatusText = null;
 
     void Awake()
     {
@@ -28,12 +31,6 @@ public class FishNetDirectUI : MonoBehaviour
 
     void OnEnable()
     {
-        if (networkManager != null)
-        {
-            networkManager.ClientManager.OnClientConnectionState += OnClientConnectionState;
-            networkManager.ClientManager.OnAuthenticated += OnClientAuthenticated;
-            networkManager.SceneManager.OnClientLoadedStartScenes += OnClientLoadedStartScenes;
-        }
         if (hostBtn) hostBtn.onClick.AddListener(StartHost);
         if (serverBtn) serverBtn.onClick.AddListener(StartServerOnly);
         if (joinBtn) joinBtn.onClick.AddListener(StartClient);
@@ -41,12 +38,6 @@ public class FishNetDirectUI : MonoBehaviour
 
     void OnDisable()
     {
-        if (networkManager != null)
-        {
-            networkManager.ClientManager.OnClientConnectionState -= OnClientConnectionState;
-            networkManager.ClientManager.OnAuthenticated -= OnClientAuthenticated;
-            networkManager.SceneManager.OnClientLoadedStartScenes -= OnClientLoadedStartScenes;
-        }
         if (hostBtn) hostBtn.onClick.RemoveListener(StartHost);
         if (serverBtn) serverBtn.onClick.RemoveListener(StartServerOnly);
         if (joinBtn) joinBtn.onClick.RemoveListener(StartClient);
@@ -56,69 +47,66 @@ public class FishNetDirectUI : MonoBehaviour
     {
         if (edgegap == null)
         {
-            Log("[Host] No Edgegap deployer assigned.");
+            SetStatus("[Host] No Edgegap deployer assigned.");
             return;
         }
         SetInteractable(false);
         try
         {
-            Log("[Host] Deploying server…");
+            SetStatus("[Host] Deploying server…");
             var res = await edgegap.CreateAndWaitAsync();
             if (clientAddress) clientAddress.text = res.joinCode;
-            Log($"Server Ready → {res.fqdn}:{res.externalPort}\nJoin Code: {res.joinCode}");
+            SetStatus($"Join Code: {res.joinCode}");
         }
         catch (Exception ex)
         {
-            Log($"[Host] Failed: {ex.Message}");
+            SetStatus($"[Host] Failed: {ex.Message}");
         }
         finally { SetInteractable(true); }
     }
 
     void StartServerOnly()
     {
-        Log("[UI] Server clicked (local dedicated).");
+        SetStatus("[UI] Server clicked (local dedicated).");
         bool ok = networkManager.ServerManager.StartConnection();
-        Log(ok ? "[Server] started." : "[Server] start failed.");
+        SetStatus(ok ? "[Server] started." : "[Server] start failed.");
     }
 
     void StartClient()
     {
-        if (!tugboat) { Log("[Client] No Tugboat transport found."); return; }
+        if (!tugboat) { SetStatus("[Client] No Tugboat transport found."); return; }
+
         ushort defaultPort = tugboat.GetPort();
         string input = clientAddress ? clientAddress.text : null;
 
         if (!TryParseHostPortOrJoinCode(input, defaultPort, out string host, out ushort port))
         {
-            Log("Enter a join code OR host or host:port");
+            SetStatus("Enter a join code OR host or host:port");
             return;
         }
 
-        //if (networkManager.ServerManager.IsOnline)
-            networkManager.ServerManager.StopConnection(true);
-        //if (networkManager.ClientManager.ConnectionState != LocalConnectionState.Stopped)
-            networkManager.ClientManager.StopConnection();
+        string displayCode = DeriveJoinCodeForDisplay(input, host, port);
+        if (!string.IsNullOrEmpty(displayCode))
+        {
+            if (clientAddress) clientAddress.text = displayCode;
+            _lockedStatusText = $"Join Code: {displayCode}";
+            _lockStatusToJoinCode = true;
+            if (statusText) statusText.text = _lockedStatusText;
+        }
+
+        if (hostBtn) hostBtn.gameObject.SetActive(false);
+        if (joinBtn) joinBtn.gameObject.SetActive(false);
+        if (clientAddress) clientAddress.gameObject.SetActive(false);
+        if (backgroundImage) backgroundImage.gameObject.SetActive(false);
+
+        networkManager.ServerManager.StopConnection(true);
+        networkManager.ClientManager.StopConnection();
 
         tugboat.SetPort(port);
         tugboat.SetClientAddress(host);
 
-        Log($"[Client] Connecting to {host}:{port} …");
-        if (!networkManager.ClientManager.StartConnection())
-            Log("[Client] StartConnection() returned false.");
-    }
-
-    void OnClientConnectionState(ClientConnectionStateArgs args)
-    {
-        Log($"[ClientState] {args.ConnectionState}");
-    }
-
-    void OnClientAuthenticated()
-    {
-        Log("[Client] Authenticated with server.");
-    }
-
-    void OnClientLoadedStartScenes(NetworkConnection conn, bool asServer)
-    {
-        if (!asServer) Log($"[Client] Loaded start scenes. ClientId={conn.ClientId}");
+        Debug.Log($"[Client] Connecting to {host}:{port} …");
+        networkManager.ClientManager.StartConnection();
     }
 
     static bool TryParseHostPortOrJoinCode(string input, ushort defaultPort, out string host, out ushort port)
@@ -152,6 +140,35 @@ public class FishNetDirectUI : MonoBehaviour
         return true;
     }
 
+    static string DeriveJoinCodeForDisplay(string originalInput, string host, ushort port)
+    {
+        if (!string.IsNullOrEmpty(originalInput) && !originalInput.Contains(".") && !originalInput.Contains(":"))
+            return originalInput;
+        if (!string.IsNullOrEmpty(host))
+        {
+            int dot = host.IndexOf('.');
+            if (dot > 0)
+            {
+                string id = host.Substring(0, dot);
+                if (IsHex(id))
+                    return EGJoinCode.EncodeRequestIdAndPort(id, port);
+            }
+        }
+        return null;
+    }
+
+    static bool IsHex(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return false;
+        for (int i = 0; i < s.Length; i++)
+        {
+            char c = s[i];
+            bool ok = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+            if (!ok) return false;
+        }
+        return true;
+    }
+
     void SetInteractable(bool on)
     {
         if (hostBtn) hostBtn.interactable = on;
@@ -160,9 +177,15 @@ public class FishNetDirectUI : MonoBehaviour
         if (clientAddress) clientAddress.interactable = on;
     }
 
-    void Log(string s)
+    void SetStatus(string s)
     {
         Debug.Log($"[DirectUI] {s}");
+        if (_lockStatusToJoinCode)
+        {
+            if (statusText && !string.IsNullOrEmpty(_lockedStatusText))
+                statusText.text = _lockedStatusText;
+            return;
+        }
         if (statusText) statusText.text = s;
     }
 }
