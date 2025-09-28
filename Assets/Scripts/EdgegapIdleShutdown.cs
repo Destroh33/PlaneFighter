@@ -10,7 +10,7 @@ using UnityEngine;
 public class EdgegapIdleShutdown : MonoBehaviour
 {
     public NetworkManager networkManager;
-    public float idleSeconds = 30f;
+    public float idleSeconds = 5f;
 
     int _activeClients = 0;
     float _emptySince = -1f;

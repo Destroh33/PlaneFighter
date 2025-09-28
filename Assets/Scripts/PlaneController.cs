@@ -48,6 +48,9 @@ public class PlaneController : NetworkBehaviour
     CinemachineBasicMultiChannelPerlin noise;
     Collider myCol;
 
+    public float pitchSense = 1f;
+    public float rollSense = 1f;
+
     void Awake()
     {
         if (!networkManager) networkManager = FindFirstObjectByType<NetworkManager>();
@@ -134,7 +137,6 @@ public class PlaneController : NetworkBehaviour
             rb.linearVelocity = transform.forward * currentSpeed;
             return;
         }
-
         if (!IsOwner) return;
 
         flightControls();
@@ -187,15 +189,15 @@ public class PlaneController : NetworkBehaviour
         {
             float mx = Input.GetAxis("Mouse X");
             float my = Input.GetAxis("Mouse Y");
-            pitch = -my * pitchSpeed;
-            roll = -mx * rollSpeed;
+            pitch = -my * pitchSpeed * pitchSense;
+            roll = -mx * rollSpeed * rollSense;
         }
         else if (controlScheme == ControlScheme.WASD)
         {
-            if (Input.GetKey(KeyCode.W)) pitch = pitchSpeed * wasdSensitivityFactor;
-            if (Input.GetKey(KeyCode.S)) pitch = -pitchSpeed * wasdSensitivityFactor;
-            if (Input.GetKey(KeyCode.A)) roll = rollSpeed * wasdSensitivityFactor;
-            if (Input.GetKey(KeyCode.D)) roll = -rollSpeed * wasdSensitivityFactor;
+            if (Input.GetKey(KeyCode.W)) pitch = pitchSpeed * wasdSensitivityFactor * pitchSense;
+            if (Input.GetKey(KeyCode.S)) pitch = -pitchSpeed * wasdSensitivityFactor * pitchSense;
+            if (Input.GetKey(KeyCode.A)) roll = rollSpeed * wasdSensitivityFactor * rollSense;
+            if (Input.GetKey(KeyCode.D)) roll = -rollSpeed * wasdSensitivityFactor * rollSense;
         }
 
         Quaternion delta = Quaternion.Euler(pitch, 0f, roll);
@@ -216,7 +218,16 @@ public class PlaneController : NetworkBehaviour
     void shootingLocal()
     {
         fireCooldown -= Time.deltaTime;
-        if (Input.GetKey(KeyCode.Space) && fireCooldown <= 0f)
+        bool shooting = false;
+        if ( controlScheme == ControlScheme.Mouse && Input.GetKey(KeyCode.Mouse0))
+        {
+            shooting = true;
+        }
+        else if (controlScheme == ControlScheme.WASD && Input.GetKey(KeyCode.Space))
+        {
+            shooting = true;
+        }
+        if (shooting && fireCooldown <= 0f)
         {
             fireCooldown = fireRate;
 
