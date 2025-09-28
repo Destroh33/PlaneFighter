@@ -2,7 +2,6 @@
 using UnityEngine;
 using FishNet.Object;
 using FishNet.Managing;
-using FishNet.Component.Transforming;
 
 [RequireComponent(typeof(NetworkObject))]
 [RequireComponent(typeof(Rigidbody))]
@@ -38,7 +37,6 @@ public class ProjectileNet : NetworkBehaviour
     {
         base.OnStartClient();
 
-        // Ensure trail renders immediately
         foreach (var t in trails)
         {
             if (!t) continue;
@@ -46,7 +44,7 @@ public class ProjectileNet : NetworkBehaviour
             t.emitting = true;
         }
 
-        // Only server simulates physics
+        // keep your existing server/client setup unchanged
         if (!IsServerInitialized && _rb != null)
         {
             _rb.isKinematic = true;
@@ -117,8 +115,7 @@ public class ProjectileNet : NetworkBehaviour
     [ObserversRpc(BufferLast = false)]
     void RpcImpact(Vector3 pos, bool stopTrails)
     {
-        if (stopTrails)
-            foreach (var t in trails) if (t) t.emitting = false;
+        if (stopTrails) DetachTrails();
 
         if (explosionPrefab)
         {
@@ -126,5 +123,49 @@ public class ProjectileNet : NetworkBehaviour
             fx.transform.localScale = Vector3.one * explosionScale;
             Destroy(fx, explosionLifetime);
         }
+    }
+
+    /// <summary>
+    /// Detach each trail so it can fade out after projectile is destroyed.
+    /// </summary>
+    void DetachTrails()
+    {
+        foreach (var t in trails)
+        {
+            if (!t) continue;
+
+            t.emitting = false;
+
+            // make a ghost GameObject to hold the trail
+            var ghost = new GameObject("TrailGhost");
+            ghost.transform.SetPositionAndRotation(t.transform.position, t.transform.rotation);
+
+            var newTrail = ghost.AddComponent<TrailRenderer>();
+            CopyTrailSettings(t, newTrail);
+
+            // destroy the ghost after the trail lifetime so it fades naturally
+            Destroy(ghost, newTrail.time + 0.1f);
+        }
+    }
+
+    static void CopyTrailSettings(TrailRenderer src, TrailRenderer dst)
+    {
+        dst.time = src.time;
+        dst.minVertexDistance = src.minVertexDistance;
+        dst.widthCurve = src.widthCurve;
+        dst.widthMultiplier = src.widthMultiplier;
+        dst.numCornerVertices = src.numCornerVertices;
+        dst.numCapVertices = src.numCapVertices;
+        dst.alignment = src.alignment;
+        dst.textureMode = src.textureMode;
+        dst.shadowCastingMode = src.shadowCastingMode;
+        dst.receiveShadows = src.receiveShadows;
+        dst.generateLightingData = src.generateLightingData;
+        dst.sharedMaterial = src.sharedMaterial;
+        dst.colorGradient = src.colorGradient;
+        dst.allowOcclusionWhenDynamic = src.allowOcclusionWhenDynamic;
+
+        // keep world-space
+        dst.transform.parent = null;
     }
 }

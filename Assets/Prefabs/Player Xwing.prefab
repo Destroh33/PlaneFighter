@@ -453,11 +453,13 @@ MonoBehaviour:
   shakeAmp: 4
   shakeFreq: 4
   player: {fileID: 0}
-  detectionRange: 200
+  detectionRange: 100
   fireRange: 150
   aimThreshold: 0.95
   aiFireCooldown: 0.5
   targetingUI: {fileID: 0}
+  pitchSense: 1
+  rollSense: 1
 --- !u!114 &1675767326881007987
 MonoBehaviour:
   m_ObjectHideFlags: 0
