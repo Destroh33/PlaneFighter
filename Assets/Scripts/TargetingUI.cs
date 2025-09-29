@@ -30,7 +30,13 @@ public class TargetingUI : MonoBehaviour
     public GameObject settingsPanel;
     public UnityEngine.UI.Slider pitchSlider;
     public UnityEngine.UI.Slider rollSlider;
+    public UnityEngine.UI.Slider volumeSlider;
     private bool settingsPanelActive = false;
+    private float health = 100f;
+    private float initAudioWait = 0.5f;
+    private bool dead = false;
+    [SerializeField] AudioSource deathexp;
+    [SerializeField] AudioClip deathexpclip;
     void Awake()
     {
         if (shipHealth == null && plane != null) shipHealth = plane.GetComponentInParent<ShipHealthNet>();
@@ -50,14 +56,28 @@ public class TargetingUI : MonoBehaviour
             if (arrowUI) arrowUI.gameObject.SetActive(false);
             if (reticleUI) reticleUI.gameObject.SetActive(false);
             SetHealthUIVisible(false);
+            if(plane==null && initAudioWait<= 0f && !dead)
+            {
+                deathexp.PlayOneShot(deathexpclip);
+                dead = true;
+                health = 100f;
+            }
             return;
         }
-
+        if(plane!=null && dead)
+        {
+            dead = false;
+        }
+        if(initAudioWait>0f)
+        {
+            initAudioWait -= Time.deltaTime;
+        }
         if (shipHealth == null && plane != null) shipHealth = plane.GetComponentInParent<ShipHealthNet>();
-        if(plane!=null && pitchSlider!=null && rollSlider!=null)
+        if(plane!=null && pitchSlider!=null && rollSlider!=null && volumeSlider!=null)
         {
             plane.GetComponent<PlaneController>().pitchSense = pitchSlider.value;
             plane.GetComponent<PlaneController>().rollSense = rollSlider.value;
+            plane.GetComponent<PlaneController>().UpdateVolume(volumeSlider.value);
         }
         SetHealthUIVisible(true);
         UpdateEnemyArrow();
@@ -154,6 +174,11 @@ public class TargetingUI : MonoBehaviour
         if (shipHealth == null || healthBarPanel == null) return;
 
         float current = Mathf.Max(0f, shipHealth.CurrentHealth());
+        if (health!=current)
+        {
+            plane.gameObject.GetComponent<PlaneController>().HitFX();
+        }
+        health = current;
         float max = Mathf.Max(1f, shipHealth.MaxHealth());
         float pct = Mathf.Clamp01(current / max);
         float x = pct * maxHealthScaleX;

@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using FishNet.Object;
 using FishNet.Managing;
 using FishNet.Connection;
+using Unity.VisualScripting;
 
 public class PlaneController : NetworkBehaviour
 {
@@ -42,6 +43,19 @@ public class PlaneController : NetworkBehaviour
     [Header("UI (auto if null)")]
     public TargetingUI targetingUI;
 
+    [Header("Audio")]
+    [SerializeField] AudioSource engineSource;
+    [SerializeField] AudioSource boostSource;
+    [SerializeField] AudioSource shootSource;
+    [SerializeField] AudioSource hitSource;
+    [SerializeField] AudioClip shootSound;
+    [SerializeField] AudioClip boostStart;
+    [SerializeField] AudioClip boostEnd;
+    [SerializeField] AudioClip boostLoop;
+    [SerializeField] AudioClip engineLoop;
+    [SerializeField] AudioClip hitSound;
+    AudioSource[] allAudioSources;
+
     float fireCooldown, currentSpeed, aiFireTimer;
     Rigidbody rb;
     Camera fallbackCam;
@@ -50,7 +64,7 @@ public class PlaneController : NetworkBehaviour
 
     public float pitchSense = 1f;
     public float rollSense = 1f;
-
+    bool boosting = false;
     void Awake()
     {
         if (!networkManager) networkManager = FindFirstObjectByType<NetworkManager>();
@@ -59,7 +73,17 @@ public class PlaneController : NetworkBehaviour
         if (rb) rb.freezeRotation = true;
         currentSpeed = baseSpeed;
     }
-
+    private void Start()    
+    {
+        allAudioSources = FindObjectsByType<AudioSource>(FindObjectsSortMode.None);
+    }
+    public void HitFX()
+    {
+        if(hitSource && hitSound)
+        {
+            hitSource.PlayOneShot(hitSound);
+        }
+    }
     public void OwnerLocalSetup()
     {
         var vcam = FindFirstObjectByType<CinemachineCamera>();
@@ -77,6 +101,17 @@ public class PlaneController : NetworkBehaviour
             ui.plane = transform;
             ui.enemy = FindNearestEnemy();
             ui.mainCamera = Camera.main;
+        }
+    }
+    public void UpdateVolume(float vol)
+    {
+        if (allAudioSources != null)
+        {
+            foreach (AudioSource audioSource in allAudioSources)
+            {
+               if(audioSource == null) continue;
+                audioSource.volume = vol;
+            }
         }
     }
 
@@ -207,11 +242,41 @@ public class PlaneController : NetworkBehaviour
     void throttle()
     {
         if (Input.GetKey(KeyCode.LeftShift))
+        {
             currentSpeed = Mathf.MoveTowards(currentSpeed, maxSpeed, acceleration * Time.deltaTime);
+            if(!boosting)
+            {
+                boosting = true;
+                boostSource.PlayOneShot(boostStart);
+                boostSource.clip = boostLoop;
+                boostSource.loop = true;
+                boostSource.Play();
+                if (engineSource)
+                {
+                    engineSource.Stop();
+                }
+            }
+        }
         else if (Input.GetKey(KeyCode.LeftControl))
+        {
             currentSpeed = Mathf.MoveTowards(currentSpeed, minSpeed, acceleration * Time.deltaTime);
+        }
         else
+        {
+            if (boosting)
+            {
+                boosting = false;
+                boostSource.Stop();
+                boostSource.PlayOneShot(boostEnd);
+                if (engineSource && engineLoop)
+                {
+                    engineSource.clip = engineLoop;
+                    engineSource.loop = true;
+                    engineSource.Play();
+                }
+            }
             currentSpeed = Mathf.MoveTowards(currentSpeed, baseSpeed, acceleration * Time.deltaTime);
+        }
     }
 
     // ---- Shooting (server authoritative) ----
@@ -230,7 +295,7 @@ public class PlaneController : NetworkBehaviour
         if (shooting && fireCooldown <= 0f)
         {
             fireCooldown = fireRate;
-
+            shootSource.PlayOneShot(shootSound);
             foreach (var spawn in projectileSpawnPoints)
             {
                 if (!spawn) continue;

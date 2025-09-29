@@ -84,7 +84,6 @@ public class ProjectileNet : NetworkBehaviour
 
         var sh = c.collider.GetComponentInParent<ShipHealthNet>();
         if (sh != null) sh.ServerTakeDamage(damage, Owner);
-
         Vector3 hitPos = c.contacts.Length > 0 ? c.contacts[0].point : transform.position;
         RpcImpact(hitPos, true);
 
@@ -103,7 +102,6 @@ public class ProjectileNet : NetworkBehaviour
 
         var sh = other.GetComponentInParent<ShipHealthNet>();
         if (sh != null) sh.ServerTakeDamage(damage, Owner);
-
         RpcImpact(transform.position, true);
 
         if (NetworkObject && NetworkObject.IsSpawned)
